@@ -5,7 +5,7 @@ use env_logger;
 use chrono::prelude::*;
 use std::path::Path;
 use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Write};
+use std::io::{Write};
 
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -18,7 +18,7 @@ struct Symbol (String);
 
 struct Client<'a> {
     out: Sender,
-    symbols: & 'a Vec<Symbol>,
+    symbols: & 'a [Symbol],
     fs_ts: Option<String>,
     file: Option<File>,
 
@@ -26,12 +26,9 @@ struct Client<'a> {
 
 
 impl Client<'_> {
-    fn new(out: Sender, symbols: &Vec<Symbol>) -> Client {
+    fn new(out: Sender, symbols: &[Symbol]) -> Client {
          Client{out, symbols, fs_ts: None, file: None }
     }
-    //ts = t.strftime('%Y-%m-%d_%H_%M')
-    //new_file_name = "bitstamp2-ws-"+ts+".log"
-
 
     fn build_file_name(ts: &str) -> String {
 
@@ -53,7 +50,7 @@ impl Client<'_> {
                 if x == &fs_ts {
                     //self.file.as_mut().unwrap().write(buf)
                 } else {
-                    info!("timestamp_ {}", fs_ts);
+                    debug!("timestamp: {}", fs_ts);
                     let f = self.file.as_mut().unwrap();
 
                         f.flush().unwrap();
@@ -65,7 +62,7 @@ impl Client<'_> {
                 }
             }
             None => {
-                info!("timestamp_ {}", fs_ts);
+                debug!("timestamp: {}", fs_ts);
 
                 self.fs_ts = Some(fs_ts);
                 self.file = Some(Client::create_file(&Client::build_file_name(&self.fs_ts.as_ref().unwrap())));
@@ -87,10 +84,7 @@ struct SubscribeMessage {
     event: String,
     data: SubscribeMessageData,
 }
-const ALL_SUBSCRIPTION_TOPICS: [&'static str; 5] =["live_trades", "live_orders", "order_book", "detail_order_book", "diff_order_book"];
-
-
-const SUBSCRIBE_TEMPLATE: &str =  r#"{"event": "bts:subscribe","data": {"channel": "{topic}_{symbol}"}}"#;
+const ALL_SUBSCRIPTION_TOPICS: [&str; 5] =["live_trades", "live_orders", "order_book", "detail_order_book", "diff_order_book"];
 
 
 impl Handler for Client<'_> {
