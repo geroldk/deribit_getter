@@ -20,7 +20,7 @@ struct Client<'a> {
     out: Sender,
     symbols: & 'a Vec<Symbol>,
     fs_ts: Option<String>,
-    file: Option<BufWriter<File>>,
+    file: Option<File>,
 
 }
 
@@ -39,31 +39,29 @@ impl Client<'_> {
         info!("{}", n);
         n
     }
-    fn create_file(name: &str) -> BufWriter<File> {
+    fn create_file(name: &str) -> File {
         let path = Path::new(name);
-        BufWriter::new(OpenOptions::new().append(true).create(true).open(path).unwrap())
+        OpenOptions::new().append(true).create(true).open(path).unwrap()
     }
 
     fn write(& mut self, buf: &[u8]) -> std::result::Result<usize, std::io::Error> {
         let utc: DateTime<Utc> = Utc::now();
         let fs_ts = utc.format("%Y-%m-%d_%HZ").to_string();
 
-        return match self.fs_ts.as_ref() {
+         match self.fs_ts.as_ref() {
             Some(x) => {
                 if x == &fs_ts {
-                    self.file.as_mut().unwrap().write(buf)
+                    //self.file.as_mut().unwrap().write(buf)
                 } else {
                     info!("timestamp_ {}", fs_ts);
-                    let f = self.file.as_mut().unwrap().get_mut();
+                    let f = self.file.as_mut().unwrap();
 
                         f.flush().unwrap();
                         f.sync_all().unwrap();
 
-
-
                     self.fs_ts = Some(fs_ts);
                     self.file = Some(Client::create_file(&Client::build_file_name(&self.fs_ts.as_ref().unwrap())));
-                    self.file.as_mut().unwrap().write(buf)
+                    //self.file.as_mut().unwrap().write(buf)
                 }
             }
             None => {
@@ -71,9 +69,10 @@ impl Client<'_> {
 
                 self.fs_ts = Some(fs_ts);
                 self.file = Some(Client::create_file(&Client::build_file_name(&self.fs_ts.as_ref().unwrap())));
-                self.file.as_mut().unwrap().write(buf)
+                //self.file.as_mut().unwrap().write(buf)
             }
-        }
+        };
+        self.file.as_mut().unwrap().write(buf)
 
 
     }
