@@ -178,7 +178,7 @@ fn main() {
         let j: Vec<TraidingPairs> = serde_json::from_reader(resp.into_reader()).unwrap();
         //println!("{:?}",j);
         let jj: Vec<Symbol> = j.into_iter().map(|x| Symbol(x.url_symbol)).collect();
-        info!("{}", "INFO");
+        info!("{}", "INFO"; "APP" => "BITSTAMP2");
         debug!("{:?}", jj);
         connect("wss://ws.bitstamp.net/", |out| Client::new(out, &jj)).unwrap();
         std::process::exit(1);
