@@ -161,7 +161,7 @@ fn setup_logging() -> slog_scope::GlobalLoggerGuard {
     //let drain_term = slog_async::Async::new(slog_term::FullFormat::new(decorator).build().fuse()).build().fuse();
     let drain = slog_async::Async::new(slog_journald::JournaldDrain.fuse()).build().fuse();
     //let drain = Duplicate::new(drain_term, drain).fuse();
-    let drain = slog_envlogger::new( drain).fuse();
+   // let drain = slog_envlogger::new( drain).fuse();
     let drain = slog_async::Async::new(drain).build().fuse();
     let logger = slog::Logger::root(drain, slog_o!("version" => env!("CARGO_PKG_VERSION")));
     let _scope_guard = slog_scope::set_global_logger(logger);
