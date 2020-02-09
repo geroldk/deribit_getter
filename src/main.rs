@@ -17,6 +17,9 @@ use std::io::Write;
 use std::path::Path;
 use ws::{connect, CloseCode, Error, Handler, Handshake, Message, Result, Sender};
 
+
+const URL: &str = "wss://ws.bitstamp.net/";
+
 #[derive(Serialize, Deserialize, Debug)]
 struct TraidingPairs {
     url_symbol: String,
@@ -126,7 +129,7 @@ impl Handler for Client<'_> {
                 };
 
                 let j = serde_json::to_string(&m).unwrap();
-                self.out.send(Message::Text(j)).unwrap();
+                self.out.send(Message::Text(j))?;
             }
         }
         info!("subscribed");
@@ -150,6 +153,7 @@ impl Handler for Client<'_> {
     }
     fn on_close(&mut self, code: CloseCode, reason: &str) {
         info!("Connection closing due to ({:?}) {}", code, reason);
+        self.out.connect(url::Url::parse(URL).unwrap()).unwrap();
     }
     fn on_error(&mut self, err: Error) {
         error!("{:?}", err);
@@ -180,7 +184,7 @@ fn main() {
         let jj: Vec<Symbol> = j.into_iter().map(|x| Symbol(x.url_symbol)).collect();
         info!("{}", "INFO"; "APP" => "BITSTAMP2");
         debug!("{:?}", jj);
-        connect("wss://ws.bitstamp.net/", |out| Client::new(out, &jj)).unwrap();
+        connect(URL, |out| Client::new(out, &jj)).unwrap();
     }
     std::process::exit(1);
 
