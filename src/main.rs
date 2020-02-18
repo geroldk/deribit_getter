@@ -15,12 +15,19 @@ use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
-use ws::{connect, CloseCode, Error, Handler, Handshake, Message, Result, Sender};
+use ws::{connect, CloseCode, Error, Handler, Handshake, Message, Result, Sender, ErrorKind, Frame, OpCode};
+use ws::util::{Token, Timeout};
+use std::str::from_utf8;
 
 
 const URL: &str = "wss://www.deribit.com/ws/api/v2";
 
-const INDEX: [&str; 2] = ["btc_usd", "ethc_usd"];
+const PING: Token = Token(1);
+const EXPIRE: Token = Token(2);
+const PING_VALUE: u64 = 1_000;
+const EXPIRE_VALUE: u64 = 2_000;
+
+const INDEX: [&str; 2] = ["btc_usd", "eth_usd"];
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Currencies {
@@ -49,6 +56,8 @@ struct Client<'a> {
     instruments: &'a [String],
     fs_ts: Option<String>,
     file: Option<File>,
+    ping_timeout: Option<Timeout>,
+    expire_timeout: Option<Timeout>,
 }
 
 impl Client<'_> {
@@ -58,6 +67,8 @@ impl Client<'_> {
             instruments,
             fs_ts: None,
             file: None,
+            ping_timeout: None,
+            expire_timeout: None,
         }
     }
 
@@ -184,6 +195,9 @@ impl Handler for Client<'_> {
         if let Some(addr) = shake.remote_addr()? {
             info!("Connection with {} now open", addr);
         }
+        self.out.timeout(PING_VALUE, PING)?;
+        self.out.timeout(EXPIRE_VALUE, EXPIRE)?;
+
         self.out.send("{\"method\":\"public/subscribe\",\"params\": {\"channels\": [\"announcements\"]},\"jsonrpc\": \"2.0\",\"id\": 1}")?;
         let book = subscribe_book(self.instruments);
         //println!("{}", m);
@@ -225,12 +239,78 @@ impl Handler for Client<'_> {
     }
     fn on_close(&mut self, code: CloseCode, reason: &str) {
         info!("Connection closing due to ({:?}) {}", code, reason);
-        self.out.connect(url::Url::parse(URL).unwrap()).unwrap();
+        if let Some(t) = self.ping_timeout.take() {
+            self.out.cancel(t).unwrap();
+        }
+        if let Some(t) = self.expire_timeout.take() {
+            self.out.cancel(t).unwrap();
+        }
+        self.out.shutdown().unwrap();
+        panic!("Connection close");
     }
     fn on_error(&mut self, err: Error) {
+        self.out.shutdown().unwrap();
         error!("{:?}", err);
     }
+    fn on_timeout(&mut self, event: Token) -> Result<()> {
+        match event {
+            // PING timeout has occured, send a ping and reschedule
+            PING => {
+                self.out.ping(time::precise_time_ns().to_string().into())?;
+                self.ping_timeout.take();
+                self.out.timeout(PING_VALUE, PING)
+            }
+            // EXPIRE timeout has occured, this means that the connection is inactive, let's close
+            EXPIRE => {error!("TIMEOUT"); self.out.shutdown()},
+            // No other timeouts are possible
+            _ => {println!("T???"); Err(Error::new(
+                ErrorKind::Internal,
+                "Invalid timeout token encountered!",
+            ))},
+        }
+    }
+
+    fn on_new_timeout(&mut self, event: Token, timeout: Timeout) -> Result<()> {
+        // Cancel the old timeout and replace.
+        if event == EXPIRE {
+            if let Some(t) = self.expire_timeout.take() {
+                self.out.cancel(t)?
+            }
+            self.expire_timeout = Some(timeout)
+        } else {
+            // This ensures there is only one ping timeout at a time
+            if let Some(t) = self.ping_timeout.take() {
+                self.out.cancel(t)?
+            }
+            self.ping_timeout = Some(timeout)
+        }
+
+        Ok(())
+    }
+    fn on_frame(&mut self, frame: Frame) -> Result<Option<Frame>> {
+        // If the frame is a pong, print the round-trip time.
+        // The pong should contain data from out ping, but it isn't guaranteed to.
+        if frame.opcode() == OpCode::Pong {
+            if let Ok(pong) = from_utf8(frame.payload())?.parse::<u64>() {
+                let now = time::precise_time_ns();
+                //println!("RTT is {:.3}ms.", (now - pong) as f64 / 1_000_000f64);
+            } else {
+                println!("Received bad pong.");
+            }
+        }
+
+        // Some activity has occured, so reset the expiration
+        self.out.timeout(EXPIRE_VALUE, EXPIRE)?;
+
+        // Run default frame validation
+        DefaultHandler.on_frame(frame)
+    }
+
 }
+
+struct DefaultHandler;
+
+impl Handler for DefaultHandler {}
 
 fn setup_logging() -> slog_scope::GlobalLoggerGuard {
     //let decorator = slog_term::TermDecorator::new().build();
